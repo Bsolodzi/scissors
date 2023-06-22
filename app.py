@@ -3,6 +3,9 @@ from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import current_user, login_user, LoginManager, UserMixin, logout_user, login_required
 import os
+import random
+import string
+
 # from utils.models import db
 
 from datetime import datetime
@@ -19,12 +22,6 @@ app.secret_key = 'sdfjsdfjdwjsjkr4w45ewsfwefwe'
 db = SQLAlchemy(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
-
-
-@login_manager.user_loader
-def load_user(user_id):
-    # Code to retrieve the user object based on the user ID
-    return User.query.get(int(user_id))
 
 
 @app.before_first_request
@@ -53,13 +50,19 @@ class Link (db.Model):
     short_link = db.Column(db.String())
     user = db.Column(db.Integer(), db.ForeignKey('users.id'))
 
-    def __repr__(self):
-        return f'User<{self.id}>'
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
+
+# class User(UserMixin):
+#   def __init__(self, user_id):
+#       self.id = user_id
 
 
 @app.route("/")
 def index():
-    return render_template('login.html')
+    return render_template('index.html')
 
 
 @app.route('/auth', methods=['GET', 'POST'])
@@ -73,11 +76,11 @@ def create_account():
         password2 = request.form.get('password2')
         user = User.query.filter_by(email=email).first()
         if password != password2 or len(password) < 6:
-            print('Password error')
+            flash('Password error')
         elif user:
-            print('User already exists')
+            flash('User already exists')
         if user:
-            print('User already exists')
+            flash('User already exists')
         else:
             user = User(username=username, email=email, first_name=first_name, last_name=last_name,
                         password_hash=generate_password_hash(password, method='sha256'))
@@ -85,6 +88,14 @@ def create_account():
             db.session.commit()
             return render_template('index.html')
     return render_template('landing.html')
+
+# generate short
+
+
+def generate_short(long_link: str, length=6):
+    characters = string.ascii_letters + string.digits
+    random_chars = ''.join(random.choice(characters) for _ in range(length))
+    return random_chars
 
 
 @app.route('/auth/login', methods=['GET', 'POST'])
@@ -98,9 +109,9 @@ def login():
                 login_user(user, remember=True)
                 return redirect(url_for('home'))
             else:
-                print('Incorrect password or username')
+                flash('Incorrect password or username')
         else:
-            print('Incorrect password or username')
+            flash('Incorrect password or username')
     return render_template('login.html')
 
 
@@ -111,9 +122,32 @@ def logout():
     return redirect(url_for('index'))
 
 
-@app.route('/home')
+@app.route('/home', methods=['GET', 'POST'])
+@login_required
 def home():
-    return render_template('suc_test.html')
+    if request.method == 'POST':
+        link = request.form.get('link')
+        found_url = Link.query.filter_by(long_link=link).first()
+        if found_url:
+            return 'URL already exists'
+        else:
+            short = generate_short(link)
+            saved_link = Link(long_link=link, short_link=short,
+                              user=current_user.id)
+            db.session.add(saved_link)
+            db.session.commit()
+
+    return render_template('suc_test.html', links=Link.query.all())
+
+
+@app.route('/<short_url>')
+@login_required
+def redirect_to_long_link(short_url):
+    long_link = Link.query.filter_by(short_link=short_url).first()
+    if long_link:
+        return redirect(long_link.long_link)
+    flash('Short URL not found.', 'error')
+    return redirect(url_for('index'))
 
 
 if __name__ == "__main__":
