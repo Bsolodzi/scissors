@@ -59,7 +59,7 @@ class Link (db.Model):
 
 @app.route("/")
 def index():
-    return render_template('login.html')
+    return render_template('index.html')
 
 
 @app.route('/auth', methods=['GET', 'POST'])
