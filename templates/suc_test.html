@@ -6,6 +6,20 @@
     <title>Document</title>
   </head>
   <body>
+    <h1>SCISSORS</h1>
+    <form method="POST">
+      <label for="link">Long Link:</label>
+      <input type="text" id="link" name="link" placeholder="Long link" /> <br />
+      <input type="submit" value="Short" />
+      <br />
+      <br />
+    </form>
+    {% for link in links %}
+    <p>{{ link.long_link }}</p>
+    <p>{{ link.short_link }}</p>
+    <p>{{ link.user }}</p>
+    {% endfor %}
+
     <a href="{{ url_for('index')}}">Logout</a>
   </body>
 </html>
