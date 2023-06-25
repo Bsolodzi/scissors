@@ -1,25 +1,31 @@
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Document</title>
-  </head>
-  <body>
+{% extends 'base.html' %}
+{% block content %}
+  <form>
     <h1>SCISSORS</h1>
     <form method="POST">
-      <label for="link">Long Link:</label>
-      <input type="text" id="link" name="link" placeholder="Long link" /> <br />
-      <input type="submit" value="Short" />
-      <br />
-      <br />
-    </form>
-    {% for link in links %}
-    <p>{{ link.long_link }}</p>
-    <p>{{ link.short_link }}</p>
-    <p>{{ link.user }}</p>
-    {% endfor %}
+      <div class="form-group">
+        <label for="link">Long Link:</label>
+        <input type="text" id="link" name="link" placeholder="Long link" /> <br />
+      </div>
 
-    <a href="{{ url_for('index')}}">Logout</a>
-  </body>
-</html>
+      <div class="form-group">
+        <input type="submit" value="Shorten link" class="mybtn" >
+      </div>
+
+      <br />
+      <br />
+
+    </form>
+      {% for link in links %}
+      <p>{{ link.long_link }}</p>
+      <p>{{ link.short_link }}</p>
+      <p>{{ link.user }}</p>
+      {% endfor %}
+    <div >
+        <small>
+            Go back to homepage? <a href="{{url_for('index')}}">Home</a>
+        </small>
+    </div>
+    <a href="{{ url_for('logout')}}">Logout</a>
+  </form>
+{% endblock content %}

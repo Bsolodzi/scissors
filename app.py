@@ -65,62 +65,64 @@ def index():
     return render_template('index.html')
 
 
-@app.route('/auth', methods=['GET', 'POST'])
+@app.route('/signup', methods=['GET', 'POST'])
 def create_account():
     if request.method == 'POST':
         username = request.form.get('username')
-        first_name = request.form.get('firstname')
-        last_name = request.form.get('lastname')
+        first_name = request.form.get('first_name')
+        last_name = request.form.get('last_name')
         email = request.form.get('email')
         password = request.form.get('password')
-        password2 = request.form.get('password2')
+        confirm_password = request.form.get('confirm')
         user = User.query.filter_by(email=email).first()
-        if password != password2 or len(password) < 6:
+        if password != confirm_password or len(password) < 6:
             flash('Password error')
         elif user:
             flash('User already exists')
-        if user:
-            flash('User already exists')
+        # if user:
+        #     flash('User already exists')
         else:
             user = User(username=username, email=email, first_name=first_name, last_name=last_name,
                         password_hash=generate_password_hash(password, method='sha256'))
             db.session.add(user)
             db.session.commit()
-            return render_template('index.html')
-    return render_template('landing.html')
+            return render_template('login.html')
+    return render_template('signup.html')
 
-# generate short
+#to login an already existing user
+@app.route('/login', methods = ['GET', 'POST'])
+def login():
+
+    #check if user has created an account
+    username = request.form.get('username')
+    password = request.form.get('password')
+
+    user = User.query.filter_by(username = username).first()
+
+    #checking if the username and the password are the same
+    if user and check_password_hash(user.password_hash, password):
+        login_user(user, remember=True)
+        return redirect(url_for('index'))
+    else:
+        flash('Incorrect password or username')
+
+    return render_template('login.html')
 
 
+# generate short link
 def generate_short(long_link: str, length=6):
     characters = string.ascii_letters + string.digits
     random_chars = ''.join(random.choice(characters) for _ in range(length))
     return random_chars
 
-
-@app.route('/auth/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        email = request.form.get('email')
-        password = request.form.get('password')
-        user = User.query.filter_by(email=email).first()
-        if user:
-            if check_password_hash(user.password_hash, password):
-                login_user(user, remember=True)
-                return redirect(url_for('home'))
-            else:
-                flash('Incorrect password or username')
-        else:
-            flash('Incorrect password or username')
-    return render_template('login.html')
-
-
-@app.route('/auth/logout')
+@app.route('/<short_url>')
 @login_required
-def logout():
-    logout_user()
+def redirect_to_long_link(short_url):
+    long_link = Link.query.filter_by(short_link=short_url).first()
+    if long_link:
+        return redirect(long_link.long_link)
+    flash('Short URL not found.', 'error')
     return redirect(url_for('index'))
-
 
 @app.route('/home', methods=['GET', 'POST'])
 @login_required
@@ -136,17 +138,35 @@ def home():
                               user=current_user.id)
             db.session.add(saved_link)
             db.session.commit()
+    return render_template('index.html', links=Link.query.all())
 
-    return render_template('suc_test.html', links=Link.query.all())
-
-
-@app.route('/<short_url>')
+@app.route('/logout')
 @login_required
-def redirect_to_long_link(short_url):
-    long_link = Link.query.filter_by(short_link=short_url).first()
-    if long_link:
-        return redirect(long_link.long_link)
-    flash('Short URL not found.', 'error')
+def logout():
+    logout_user()
+    return redirect(url_for('index'))
+
+
+#route for contact page
+@app.route('/contact')
+def contact():
+    return render_template('contact.html')
+
+#route for profile page
+@app.route('/profile')
+@login_required
+def profile():
+    return render_template('profile.html')
+
+#route for deleting a link
+@app.route('/delete/<int:id>/', methods = ['GET'])
+@login_required
+def delete(id):
+    link_to_delete = Link.query.get_or_404(id)
+
+    db.session.delete(link_to_delete)
+    db.session.commit()
+
     return redirect(url_for('index'))
 
 
