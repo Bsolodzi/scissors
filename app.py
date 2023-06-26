@@ -8,8 +8,6 @@ import string
 
 # from utils.models import db
 
-from datetime import datetime
-
 base_dir = os.path.dirname(os.path.realpath(__file__))
 
 app = Flask(__name__)
@@ -89,17 +87,19 @@ def create_account():
             return render_template('login.html')
     return render_template('signup.html')
 
-#to login an already existing user
-@app.route('/login', methods = ['GET', 'POST'])
+# to login an already existing user
+
+
+@app.route('/login', methods=['GET', 'POST'])
 def login():
 
-    #check if user has created an account
+    # check if user has created an account
     username = request.form.get('username')
     password = request.form.get('password')
 
-    user = User.query.filter_by(username = username).first()
+    user = User.query.filter_by(username=username).first()
 
-    #checking if the username and the password are the same
+    # checking if the username and the password are the same
     if user and check_password_hash(user.password_hash, password):
         login_user(user, remember=True)
         return redirect(url_for('index'))
@@ -115,6 +115,7 @@ def generate_short(long_link: str, length=6):
     random_chars = ''.join(random.choice(characters) for _ in range(length))
     return random_chars
 
+
 @app.route('/<short_url>')
 @login_required
 def redirect_to_long_link(short_url):
@@ -124,9 +125,13 @@ def redirect_to_long_link(short_url):
     flash('Short URL not found.', 'error')
     return redirect(url_for('index'))
 
-@app.route('/home', methods=['GET', 'POST'])
+
+@app.route('/', methods=['GET', 'POST'])
 @login_required
 def home():
+    if not current_user.is_authenticated:
+        return redirect(url_for('login'))
+
     if request.method == 'POST':
         link = request.form.get('link')
         found_url = Link.query.filter_by(long_link=link).first()
@@ -138,7 +143,15 @@ def home():
                               user=current_user.id)
             db.session.add(saved_link)
             db.session.commit()
+            links = Link.query.all()
+            for link in links:
+                print(link.long_link)
+                print(link.short_link)
+                print(link.user)
+            return redirect(url_for('home'))
+
     return render_template('index.html', links=Link.query.all())
+
 
 @app.route('/logout')
 @login_required
@@ -147,19 +160,21 @@ def logout():
     return redirect(url_for('index'))
 
 
-#route for contact page
+# route for contact page
 @app.route('/contact')
 def contact():
     return render_template('contact.html')
 
-#route for profile page
+
 @app.route('/profile')
 @login_required
 def profile():
     return render_template('profile.html')
 
-#route for deleting a link
-@app.route('/delete/<int:id>/', methods = ['GET'])
+# route for deleting a link
+
+
+@app.route('/delete/<int:id>/', methods=['GET'])
 @login_required
 def delete(id):
     link_to_delete = Link.query.get_or_404(id)
