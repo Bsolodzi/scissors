@@ -13,19 +13,20 @@
       </div>
 
       <br />
-      <br />
 
     </form>
-      {% for link in links %}
+      {% for links in link %}
       <p>{{ link.long_link }}</p>
       <p>{{ link.short_link }}</p>
       <p>{{ link.user }}</p>
       {% endfor %}
+
     <div >
         <small>
             Go back to homepage? <a href="{{url_for('index')}}">Home</a>
         </small>
     </div>
+
     <a href="{{ url_for('logout')}}">Logout</a>
   </form>
 {% endblock content %}

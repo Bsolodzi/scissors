@@ -46,7 +46,7 @@ class Link (db.Model):
     id = db.Column(db.Integer(), primary_key=True)
     long_link = db.Column(db.String(), nullable=False)
     short_link = db.Column(db.String())
-    user = db.Column(db.Integer(), db.ForeignKey('users.id'))
+    user = db.Column(db.Integer(), db.ForeignKey('users.username'))
 
 
 @login_manager.user_loader
@@ -60,7 +60,13 @@ def load_user(user_id):
 
 @app.route("/")
 def index():
-    return render_template('index.html')
+    links = Link.query.all()
+
+    context = {
+        'links': links,
+    }
+    
+    return render_template ("index.html", **context)
 
 
 @app.route('/signup', methods=['GET', 'POST'])
@@ -99,12 +105,17 @@ def login():
 
     user = User.query.filter_by(username=username).first()
 
-    # checking if the username and the password are the same
-    if user and check_password_hash(user.password_hash, password):
-        login_user(user, remember=True)
-        return redirect(url_for('index'))
+    # checking if user exists
+    if user:
+
+        # checking if the username and the password are the same
+        if check_password_hash(user.password_hash, password):
+            login_user(user, remember=True)
+            return redirect(url_for('index'))
+        else:
+            flash('Incorrect password or username')
     else:
-        flash('Incorrect password or username')
+        flash('User does not exist')
 
     return render_template('login.html')
 
@@ -116,7 +127,7 @@ def generate_short(long_link: str, length=6):
     return random_chars
 
 
-@app.route('/<short_url>')
+@app.route('/short_url')
 @login_required
 def redirect_to_long_link(short_url):
     long_link = Link.query.filter_by(short_link=short_url).first()
@@ -126,6 +137,7 @@ def redirect_to_long_link(short_url):
     return redirect(url_for('index'))
 
 
+# def get_short_link()
 @app.route('/', methods=['GET', 'POST'])
 @login_required
 def home():
@@ -140,15 +152,19 @@ def home():
         else:
             short = generate_short(link)
             saved_link = Link(long_link=link, short_link=short,
-                              user=current_user.id)
+                              user=current_user.username)
             db.session.add(saved_link)
             db.session.commit()
-            links = Link.query.all()
-            for link in links:
-                print(link.long_link)
-                print(link.short_link)
-                print(link.user)
-            return redirect(url_for('home'))
+
+            # saved_linkk= print(saved_link.short_link)
+            
+            # return saved_linkk
+            # links = Link.query.all()
+            # for link in links:
+            #     print(link.long_link)
+            #     print(link.short_link)
+            #     print(link.user)
+            # return redirect(url_for('index'))
 
     return render_template('index.html', links=Link.query.all())
 
@@ -171,9 +187,8 @@ def contact():
 def profile():
     return render_template('profile.html')
 
+
 # route for deleting a link
-
-
 @app.route('/delete/<int:id>/', methods=['GET'])
 @login_required
 def delete(id):
