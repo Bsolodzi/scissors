@@ -4,9 +4,13 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import current_user, login_user, LoginManager, UserMixin, logout_user, login_required
 import os
 import random
+from datetime import datetime
 import string
-
-# from utils.models import db
+from flask_caching import Cache
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from sqlalchemy import desc
+from sqlalchemy.schema import UniqueConstraint
 
 base_dir = os.path.dirname(os.path.realpath(__file__))
 
@@ -17,6 +21,14 @@ app.config["SQLALCHEMY_DATABASE_URI"] = 'sqlite:///' + \
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SECRET_KEY"] = '4d4c18d8d33c8c704705'
 app.secret_key = 'sdfjsdfjdwjsjkr4w45ewsfwefwe'
+app.config['CACHE_TYPE'] = 'simple'
+cache = Cache(app)
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    default_limits=["200 per day", "50 per hour"],
+    storage_uri="memory://",
+)
 db = SQLAlchemy(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -27,7 +39,7 @@ def create_tables():
     db.create_all()
 
 
-class User (db.Model, UserMixin):
+class User(db.Model, UserMixin):
     __tablename__ = "users"
     id = db.Column(db.Integer(), primary_key=True)
     username = db.Column(db.String(255), nullable=False, unique=True)
@@ -35,18 +47,26 @@ class User (db.Model, UserMixin):
     last_name = db.Column(db.String(50), nullable=False)
     email = db.Column(db.String(255), nullable=False, unique=True)
     password_hash = db.Column(db.Text(), nullable=False)
-    links = db.relationship('Link')
+    links = db.relationship('Link', backref='user')
 
     def __repr__(self):
-        return f'User<{self.username}>'
+        return f'{self.username}'
 
 
-class Link (db.Model):
+class Link(db.Model):
     __tablename__ = "links"
     id = db.Column(db.Integer(), primary_key=True)
     long_link = db.Column(db.String(), nullable=False)
     short_link = db.Column(db.String())
-    user = db.Column(db.Integer(), db.ForeignKey('users.username'))
+    user_id = db.Column(db.Integer(), db.ForeignKey('users.id'))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint('long_link', 'user_id', name='_user_long_link_uc'),
+    )
+
+    def __repr__(self):
+        return f'Link<{self.short_link}>'
 
 
 @login_manager.user_loader
@@ -58,6 +78,7 @@ def load_user(user_id):
 #       self.id = user_id
 
 
+'''
 @app.route("/")
 def index():
     links = Link.query.all()
@@ -65,8 +86,9 @@ def index():
     context = {
         'links': links,
     }
-    
-    return render_template ("index.html", **context)
+
+    return render_template("index.html", **context)
+'''
 
 
 @app.route('/signup', methods=['GET', 'POST'])
@@ -111,7 +133,7 @@ def login():
         # checking if the username and the password are the same
         if check_password_hash(user.password_hash, password):
             login_user(user, remember=True)
-            return redirect(url_for('index'))
+            return redirect(url_for('home'))
         else:
             flash('Incorrect password or username')
     else:
@@ -127,53 +149,51 @@ def generate_short(long_link: str, length=6):
     return random_chars
 
 
-@app.route('/short_url')
+@app.route('/<short_url>')
+@cache.cached(timeout=60)
 @login_required
 def redirect_to_long_link(short_url):
     long_link = Link.query.filter_by(short_link=short_url).first()
     if long_link:
-        return redirect(long_link.long_link)
+        return redirect(long_link.long_link, code=301)
     flash('Short URL not found.', 'error')
-    return redirect(url_for('index'))
+    return redirect(url_for('home'))
 
 
 # def get_short_link()
 @app.route('/', methods=['GET', 'POST'])
-@login_required
+@limiter.limit("1/second", override_defaults=False)
+@cache.cached(timeout=60)
 def home():
-    if not current_user.is_authenticated:
-        return redirect(url_for('login'))
-
     if request.method == 'POST':
         link = request.form.get('link')
-        found_url = Link.query.filter_by(long_link=link).first()
+        found_url = Link.query.filter_by(
+            long_link=link, user=current_user).first()
         if found_url:
-            return 'URL already exists'
+            flash('URL already exists for this user.')
         else:
             short = generate_short(link)
-            saved_link = Link(long_link=link, short_link=short,
-                              user=current_user.username)
+            saved_link = Link(
+                long_link=link, short_link=short, user=current_user)
             db.session.add(saved_link)
             db.session.commit()
 
-            # saved_linkk= print(saved_link.short_link)
-            
-            # return saved_linkk
-            # links = Link.query.all()
-            # for link in links:
-            #     print(link.long_link)
-            #     print(link.short_link)
-            #     print(link.user)
-            # return redirect(url_for('index'))
+            latest_link = saved_link.short_link  # Get the latest short link
 
-    return render_template('index.html', links=Link.query.all())
+            return redirect(url_for('home', latest_link=latest_link))
+
+    if current_user.is_authenticated:
+        links = Link.query.filter_by(user=current_user).order_by(
+            desc(Link.created_at)).all()
+    else:
+        links = []
+    return render_template('index.html', links=links)
 
 
 @app.route('/logout')
-@login_required
 def logout():
     logout_user()
-    return redirect(url_for('index'))
+    return redirect(url_for('login'))
 
 
 # route for contact page
