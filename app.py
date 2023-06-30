@@ -2,7 +2,7 @@ from flask import Flask, render_template, url_for, request, redirect, flash
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import current_user, login_user, LoginManager, UserMixin, logout_user, login_required
-import os, random, string, requests, io, qrcode
+import os, random, string, io
 from datetime import datetime
 import string
 from flask_caching import Cache
@@ -182,28 +182,28 @@ def home():
         links = []
     return render_template('index.html', links=links)
 
+#qrcode
 
-def generate_qr_code(link):
-    image = qrcode.make(link)
-    image_io = io.BytesIO()
-    image.save(image_io, 'PNG')
-    image_io.seek(0)
-    return image_io
 
-@app.route('/<short_link>/qr_code')
-@login_required
-@cache.cached(timeout=30)
-@limiter.limit('10/minutes')
-def generate_qr_code_link(short_link):
-    link = Link.query.filter_by(user_id=current_user.id).filter_by(short_link=short_link).first()
+# def generate_qr_code(link):
+#     image = qrcode.make(link)
+#     image_io = io.BytesIO()
+#     image.save(image_io, 'PNG')
+#     image_io.seek(0)
+#     return image_io
 
-    if link:
-        image_io = generate_qr_code(request.host_url + link.short_link)
-        return image_io.getvalue(), 200, {'Content-Type': 'image/png'}
+# @app.route('/<short_link>/qr_code')
+# @login_required
+# @cache.cached(timeout=30)
+# @limiter.limit('10/minutes')
+# def generate_qr_code_link(short_link):
+#     link = Link.query.filter_by(user_id=current_user.id).filter_by(short_link=short_link).first()
+
+#     if link:
+#         image_io = generate_qr_code(request.host_url + link.short_link)
+#         return image_io.getvalue(), 200, {'Content-Type': 'image/png'}
     
-    return 404 
-
-
+#     return 404 
 
 
 @app.route('/logout')
