@@ -9,7 +9,8 @@ from flask_caching import Cache
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from sqlalchemy import desc
-from sqlalchemy.schema import UniqueConstraint
+import qrcode
+
 
 base_dir = os.path.dirname(os.path.realpath(__file__))
 
@@ -66,23 +67,6 @@ class Link(db.Model):
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
-
-# class User(UserMixin):
-#   def __init__(self, user_id):
-#       self.id = user_id
-
-
-'''
-@app.route("/")
-def index():
-    links = Link.query.all()
-
-    context = {
-        'links': links,
-    }
-
-    return render_template("index.html", **context)
-'''
 
 
 @app.route('/signup', methods=['GET', 'POST'])
@@ -157,9 +141,11 @@ def redirect_to_long_link(short_url):
 # def get_short_link()
 @app.route('/', methods=['GET', 'POST'])
 @login_required
-@limiter.limit("1/second")
-@cache.cached(timeout=20)
+#@limiter.limit("1/second")
+#@cache.cached(timeout=20)
 def home():
+    latest_link = None  # Initialize the variable
+
     if request.method == 'POST':
         link = request.form.get('link')
         found_url = Link.query.filter_by(
@@ -180,30 +166,27 @@ def home():
         desc(Link.created_at)).all()
     else:
         links = []
-    return render_template('index.html', links=links)
+    return render_template('index.html', links=links, latest_link=latest_link)
+
 
 #qrcode
 
+def generate_qr_code(link):
+    image = qrcode.make(link)
+    image_io = io.BytesIO()
+    image.save(image_io, 'PNG')
+    image_io.seek(0)
+    return image_io
 
-# def generate_qr_code(link):
-#     image = qrcode.make(link)
-#     image_io = io.BytesIO()
-#     image.save(image_io, 'PNG')
-#     image_io.seek(0)
-#     return image_io
+@app.route('/detail/<int:id>/qr_code')
+@login_required
+def generate_qr_code_link(id: int):
+    link = Link.query.get(id)
+    if link:
+        image_io = generate_qr_code(link.long_link)
+        return image_io.getvalue(), 200, {'Content-Type': 'image/png'}
 
-# @app.route('/<short_link>/qr_code')
-# @login_required
-# @cache.cached(timeout=30)
-# @limiter.limit('10/minutes')
-# def generate_qr_code_link(short_link):
-#     link = Link.query.filter_by(user_id=current_user.id).filter_by(short_link=short_link).first()
-
-#     if link:
-#         image_io = generate_qr_code(request.host_url + link.short_link)
-#         return image_io.getvalue(), 200, {'Content-Type': 'image/png'}
-    
-#     return 404 
+    return 'Link not found', 404
 
 
 @app.route('/logout')
@@ -224,16 +207,33 @@ def profile():
     return render_template('profile.html')
 
 
-# route for deleting a link
-@app.route('/delete/<int:id>/', methods=['GET'])
+@app.route('/details/<int:id>/', methods=['POST', 'GET'])
 @login_required
-def delete(id):
-    link_to_delete = Link.query.get_or_404(id)
+def delete_link(id: int):
+    if request.method == 'POST':
+        link = Link.query.get(id)
 
-    db.session.delete(link_to_delete)
-    db.session.commit()
+        if link is None:
+            return 'Link not found'
 
-    return redirect(url_for('index'))
+        if current_user.id != link.user_id:
+            return 'You do not have permission to delete this link'
+
+        db.session.delete(link)
+        db.session.commit()
+
+        return redirect(url_for('home'))
+
+    link = Link.query.get(id)
+
+    if link is None:
+        return 'Link not found'
+
+    if current_user.id != link.user_id:
+        return 'You do not have access to view this page'
+
+    return render_template('link_details.html', link=link)
+
 
 
 if __name__ == "__main__":
