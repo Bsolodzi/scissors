@@ -2,8 +2,7 @@ from flask import Flask, render_template, url_for, request, redirect, flash
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_login import current_user, login_user, LoginManager, UserMixin, logout_user, login_required
-import os
-import random
+import os, random, string, requests, io, qrcode
 from datetime import datetime
 import string
 from flask_caching import Cache
@@ -20,7 +19,6 @@ app.config["SQLALCHEMY_DATABASE_URI"] = 'sqlite:///' + \
     os.path.join(base_dir, 'models.db')
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SECRET_KEY"] = '4d4c18d8d33c8c704705'
-app.secret_key = 'sdfjsdfjdwjsjkr4w45ewsfwefwe'
 app.config['CACHE_TYPE'] = 'simple'
 cache = Cache(app)
 limiter = Limiter(
@@ -39,7 +37,7 @@ def create_tables():
     db.create_all()
 
 
-class User(db.Model, UserMixin):
+class User (db.Model, UserMixin):
     __tablename__ = "users"
     id = db.Column(db.Integer(), primary_key=True)
     username = db.Column(db.String(255), nullable=False, unique=True)
@@ -50,7 +48,7 @@ class User(db.Model, UserMixin):
     links = db.relationship('Link', backref='user')
 
     def __repr__(self):
-        return f'{self.username}'
+        return f'User<{self.username}>'
 
 
 class Link(db.Model):
@@ -60,10 +58,6 @@ class Link(db.Model):
     short_link = db.Column(db.String())
     user_id = db.Column(db.Integer(), db.ForeignKey('users.id'))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
-    __table_args__ = (
-        UniqueConstraint('long_link', 'user_id', name='_user_long_link_uc'),
-    )
 
     def __repr__(self):
         return f'Link<{self.short_link}>'
@@ -132,7 +126,7 @@ def login():
 
         # checking if the username and the password are the same
         if check_password_hash(user.password_hash, password):
-            login_user(user, remember=True)
+            login_user(user)
             return redirect(url_for('home'))
         else:
             flash('Incorrect password or username')
@@ -162,8 +156,9 @@ def redirect_to_long_link(short_url):
 
 # def get_short_link()
 @app.route('/', methods=['GET', 'POST'])
-@limiter.limit("1/second", override_defaults=False)
-@cache.cached(timeout=60)
+@login_required
+@limiter.limit("1/second")
+@cache.cached(timeout=20)
 def home():
     if request.method == 'POST':
         link = request.form.get('link')
@@ -173,21 +168,42 @@ def home():
             flash('URL already exists for this user.')
         else:
             short = generate_short(link)
-            saved_link = Link(
-                long_link=link, short_link=short, user=current_user)
+            saved_link = Link(long_link=link, short_link=short, user_id=current_user.id)
             db.session.add(saved_link)
             db.session.commit()
-
             latest_link = saved_link.short_link  # Get the latest short link
 
             return redirect(url_for('home', latest_link=latest_link))
 
     if current_user.is_authenticated:
         links = Link.query.filter_by(user=current_user).order_by(
-            desc(Link.created_at)).all()
+        desc(Link.created_at)).all()
     else:
         links = []
     return render_template('index.html', links=links)
+
+
+def generate_qr_code(link):
+    image = qrcode.make(link)
+    image_io = io.BytesIO()
+    image.save(image_io, 'PNG')
+    image_io.seek(0)
+    return image_io
+
+@app.route('/<short_link>/qr_code')
+@login_required
+@cache.cached(timeout=30)
+@limiter.limit('10/minutes')
+def generate_qr_code_link(short_link):
+    link = Link.query.filter_by(user_id=current_user.id).filter_by(short_link=short_link).first()
+
+    if link:
+        image_io = generate_qr_code(request.host_url + link.short_link)
+        return image_io.getvalue(), 200, {'Content-Type': 'image/png'}
+    
+    return 404 
+
+
 
 
 @app.route('/logout')
