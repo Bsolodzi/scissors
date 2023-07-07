@@ -1,12 +1,23 @@
-{% extends 'base.html' %} {% block content %} Short Link: {{ link.short_link }}
-<a href="{{ link.long_link }}">Long Link</a>
+{% extends 'base.html' %}
+{% block content %} 
+
+<p>Long Link : {{ link.long_link }} </p>
+<p>Short Link: {{ link.short_link }}</p>
 
 <form id="delete-form" method="POST">
   <input type="hidden" name="_method" value="DELETE" />
-  <button type="button" onclick="deleteLink()">Delete</button>
-</form>
-<form>
-  <button id="generate-qrcode-btn" type="button">Generate QR code</button>
+  <button type="button" class="mybtn" onclick="deleteLink()">Delete</button>
+
+  <div>
+    <button id="generate-qrcode-btn" class="mybtn" type="button">Generate QR code</button>
+  </div>
+
+  <div>
+    <a href="{{url_for('analytics', short_link=link.short_link)}}">
+    <button id="analytics" class="mybtn" type="button">Check analytics</button></a>
+    
+  </div>
+
 </form>
 
 <div id="qrcode-container"></div>

@@ -22,12 +22,12 @@ app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["SECRET_KEY"] = '4d4c18d8d33c8c704705'
 app.config['CACHE_TYPE'] = 'simple'
 cache = Cache(app)
-limiter = Limiter(
-    get_remote_address,
-    app=app,
-    default_limits=["200 per day", "50 per hour"],
-    storage_uri="memory://",
-)
+# limiter = Limiter(
+#     get_remote_address,
+#     app=app,
+#     default_limits=["200 per day", "50 per hour"],
+#     storage_uri="memory://",
+# )
 db = SQLAlchemy(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -56,8 +56,11 @@ class Link(db.Model):
     __tablename__ = "links"
     id = db.Column(db.Integer(), primary_key=True)
     long_link = db.Column(db.String(), nullable=False)
+    custom_link = db.Column(db.String(50), unique=True, default=None)
     short_link = db.Column(db.String())
     user_id = db.Column(db.Integer(), db.ForeignKey('users.id'))
+    clicks = db.Column(db.Integer, default=0)
+    created_at = db.Column(db.DateTime, server_default=db.func.now())
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def __repr__(self):
@@ -140,7 +143,7 @@ def redirect_to_long_link(short_url):
 
 # def get_short_link()
 @app.route('/', methods=['GET', 'POST'])
-@login_required
+# @login_required
 #@limiter.limit("1/second")
 #@cache.cached(timeout=20)
 def home():
@@ -148,10 +151,21 @@ def home():
 
     if request.method == 'POST':
         link = request.form.get('link')
+        custom_link = request.form.get('custom_link')
         found_url = Link.query.filter_by(
             long_link=link, user=current_user).first()
         if found_url:
             flash('URL already exists for this user.')
+
+        elif custom_link:
+            flash("You are creating a personalized link for your long url")
+            saved_link = Link(long_link=link, short_link=custom_link, custom_link=custom_link, user_id=current_user.id)
+            db.session.add(saved_link)
+            db.session.commit()
+            latest_link = saved_link.short_link
+
+            return redirect(url_for('home', latest_link=latest_link))
+
         else:
             short = generate_short(link)
             saved_link = Link(long_link=link, short_link=short, user_id=current_user.id)
@@ -170,7 +184,6 @@ def home():
 
 
 #qrcode
-
 def generate_qr_code(link):
     image = qrcode.make(link)
     image_io = io.BytesIO()
@@ -189,9 +202,52 @@ def generate_qr_code_link(id: int):
     return 'Link not found', 404
 
 
+@app.route('/<short_link>/edit', methods=['GET', 'POST'])
+@login_required
+# @limiter.limit('10/minutes')
+def update_link(short_link):
+    link = Link.query.filter_by(user_id=current_user.id).filter_by(short_link=short_link).first()
+    host = request.host_url
+    if link:
+        if request.method == 'POST':
+            custom_link = request.form['custom_link']
+            if custom_link:
+                link_exists = Link.query.filter_by(custom_link=custom_link).first()
+                if link_exists:
+                    flash ('That custom link already exists. Please try another.')
+                    return redirect(url_for('update_link', short_link=short_link))
+                link.custom_link = custom_link
+                link.short_link = custom_link
+            db.session.commit()
+            return redirect(url_for('analytics', short_link=link.short_link))
+        return render_template('edit.html', link=link, host=host)
+    return 'Link not found', 404
+
+@app.route('/<short_link>')
+@cache.cached(timeout=30)
+def redirect_link(short_link):
+    link = Link.query.filter_by(short_link=short_link).first()
+    if link:
+        link.clicks += 1
+        db.session.commit()
+        return redirect(link.long_link)
+    else:
+        return render_template('404.html')
+
+@app.route('/<short_link>/analytics', methods=['GET', 'POST'])
+@login_required
+def analytics(short_link):
+    link = Link.query.filter_by(user_id=current_user.id).filter_by(short_link=short_link).first()
+    host = request.host_url
+    if link:
+        return render_template('analytics.html', link=link, host=host)
+    # return render_template('404.html')
+
+
 @app.route('/logout')
 def logout():
     logout_user()
+    flash('You have been logged out.')
     return redirect(url_for('login'))
 
 
@@ -222,6 +278,8 @@ def delete_link(id: int):
         db.session.delete(link)
         db.session.commit()
 
+        flash('You have successfully deleted the link.')
+
         return redirect(url_for('home'))
 
     link = Link.query.get(id)
@@ -233,7 +291,6 @@ def delete_link(id: int):
         return 'You do not have access to view this page'
 
     return render_template('link_details.html', link=link)
-
 
 
 if __name__ == "__main__":
