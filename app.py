@@ -129,7 +129,7 @@ def generate_short(long_link: str, length=6):
     random_chars = ''.join(random.choice(characters) for _ in range(length))
     return random_chars
 
-
+'''
 @app.route('/<short_url>')
 @cache.cached(timeout=60)
 @login_required
@@ -139,6 +139,18 @@ def redirect_to_long_link(short_url):
         return redirect(long_link.long_link, code=301)
     flash('Short URL not found.', 'error')
     return redirect(url_for('home'))
+'''
+# assignment
+@app.route('/<short_link>')
+@cache.cached(timeout=30)
+def redirect_link(short_link):
+    link = Link.query.filter_by(short_link=short_link).first()
+    if link:
+        link.clicks += 1
+        db.session.commit()
+        return redirect(link.long_link)
+    else:
+        return render_template('404.html')
 
 
 # def get_short_link()
@@ -223,16 +235,7 @@ def update_link(short_link):
         return render_template('edit.html', link=link, host=host)
     return 'Link not found', 404
 
-@app.route('/<short_link>')
-@cache.cached(timeout=30)
-def redirect_link(short_link):
-    link = Link.query.filter_by(short_link=short_link).first()
-    if link:
-        link.clicks += 1
-        db.session.commit()
-        return redirect(link.long_link)
-    else:
-        return render_template('404.html')
+
 
 @app.route('/<short_link>/analytics', methods=['GET', 'POST'])
 @login_required
@@ -240,6 +243,7 @@ def analytics(short_link):
     link = Link.query.filter_by(user_id=current_user.id).filter_by(short_link=short_link).first()
     host = request.host_url
     if link:
+        print(link.clicks)
         return render_template('analytics.html', link=link, host=host)
     # return render_template('404.html')
 
