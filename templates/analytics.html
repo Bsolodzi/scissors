@@ -14,7 +14,7 @@ block content %} {% if current_user.is_authenticated %} {% if link %}
       </p>
       <p>
         Shortened Link: <br />
-        <a href="{{link.short_link}}" target="_blank"
+        <a href="{{host}}{{link.short_link}}" target="_blank"
           >{{host}}{{link.short_link}}</a
         >
       </p>

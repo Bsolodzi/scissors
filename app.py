@@ -10,6 +10,8 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from sqlalchemy import desc
 import qrcode
+# from geolite2 import geolite2
+from IP2Location import IP2Location
 
 
 base_dir = os.path.dirname(os.path.realpath(__file__))
@@ -31,6 +33,10 @@ limiter = Limiter(
 db = SQLAlchemy(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
+# geoip_reader = geolite2.reader()
+ip2location = IP2Location.IP2Location()
+# Specify the path to the IP2Location database file
+database_path = 'C:\\Users\\bsolo\\desktop\\scissors\\IP2LOCATION-LITE-DB1.BIN'
 
 
 @app.before_first_request
@@ -60,7 +66,6 @@ class Link(db.Model):
     short_link = db.Column(db.String())
     user_id = db.Column(db.Integer(), db.ForeignKey('users.id'))
     clicks = db.Column(db.Integer, default=0)
-    created_at = db.Column(db.DateTime, server_default=db.func.now())
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     def __repr__(self):
@@ -129,17 +134,7 @@ def generate_short(long_link: str, length=6):
     random_chars = ''.join(random.choice(characters) for _ in range(length))
     return random_chars
 
-'''
-@app.route('/<short_url>')
-@cache.cached(timeout=60)
-@login_required
-def redirect_to_long_link(short_url):
-    long_link = Link.query.filter_by(short_link=short_url).first()
-    if long_link:
-        return redirect(long_link.long_link, code=301)
-    flash('Short URL not found.', 'error')
-    return redirect(url_for('home'))
-'''
+
 # assignment
 @app.route('/<short_link>')
 @cache.cached(timeout=30)
@@ -150,18 +145,18 @@ def redirect_link(short_link):
         db.session.commit()
         return redirect(link.long_link)
     else:
-        return render_template('404.html')
+        return 'link not found', 404
 
 
 # def get_short_link()
 @app.route('/', methods=['GET', 'POST'])
 # @login_required
-#@limiter.limit("1/second")
-#@cache.cached(timeout=20)
+@cache.cached(timeout=20)
+@limiter.limit("1/second")
 def home():
     latest_link = None  # Initialize the variable
 
-    if request.method == 'POST':
+    if request.method == 'POST' and current_user.is_authenticated:
         link = request.form.get('link')
         custom_link = request.form.get('custom_link')
         found_url = Link.query.filter_by(
@@ -190,8 +185,34 @@ def home():
     if current_user.is_authenticated:
         links = Link.query.filter_by(user=current_user).order_by(
         desc(Link.created_at)).all()
+
+        ip_address = request.remote_addr
+        record = ip2location.get_all(ip_address)
+
+        # Access various geolocation properties
+        country = record.country_name
+        region = record.region
+        city = record.city
+        latitude = record.latitude
+        longitude = record.longitude
+
+        return f"Your location: {city}, {region}, {country} (Latitude: {latitude}, Longitude: {longitude})"
+
+        # ip_address = request.remote_addr
+        # location_info = geoip_reader.get(ip_address)
+
+        # if location_info is not None:
+        #     country = location_info['country']['names']['en']
+        #     city = location_info['city']['names']['en']
+        #     print (f"Your location: {city}, {country}")
+        # else:
+        #     return "Unable to determine your location"
+
     else:
         links = []
+
+    
+
     return render_template('index.html', links=links, latest_link=latest_link)
 
 
@@ -202,6 +223,7 @@ def generate_qr_code(link):
     image.save(image_io, 'PNG')
     image_io.seek(0)
     return image_io
+
 
 @app.route('/detail/<int:id>/qr_code')
 @login_required
@@ -234,7 +256,6 @@ def update_link(short_link):
             return redirect(url_for('analytics', short_link=link.short_link))
         return render_template('edit.html', link=link, host=host)
     return 'Link not found', 404
-
 
 
 @app.route('/<short_link>/analytics', methods=['GET', 'POST'])
@@ -298,4 +319,5 @@ def delete_link(id: int):
 
 
 if __name__ == "__main__":
+    ip2location.open(database_path)
     app.run(debug=True)
