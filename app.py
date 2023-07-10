@@ -10,9 +10,10 @@ from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from sqlalchemy import desc
 import qrcode
-# from geolite2 import geolite2
-from IP2Location import IP2Location
-
+import requests
+from dotenv import load_dotenv
+from urllib import parse
+from validators import url as validate_url
 
 base_dir = os.path.dirname(os.path.realpath(__file__))
 
@@ -33,11 +34,9 @@ limiter = Limiter(
 db = SQLAlchemy(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
-# geoip_reader = geolite2.reader()
-ip2location = IP2Location.IP2Location()
-# Specify the path to the IP2Location database file
-database_path = 'C:\\Users\\bsolo\\desktop\\scissors\\IP2LOCATION-LITE-DB1.BIN'
 
+load_dotenv()
+# print(os.getenv('API_KEY'))
 
 @app.before_first_request
 def create_tables():
@@ -76,6 +75,15 @@ class Link(db.Model):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
+# function to check if url is valid
+def is_valid_url(url: str):
+    # Parse the URL to check if it is a well-formed URL
+    parsed_url = parse.urlparse(url)
+    if not parsed_url.scheme or not parsed_url.netloc:
+        return False
+
+    # Use the validators module to perform additional URL validation
+    return validate_url(url)
 
 @app.route('/signup', methods=['GET', 'POST'])
 def create_account():
@@ -91,8 +99,6 @@ def create_account():
             flash('Password error')
         elif user:
             flash('User already exists')
-        # if user:
-        #     flash('User already exists')
         else:
             user = User(username=username, email=email, first_name=first_name, last_name=last_name,
                         password_hash=generate_password_hash(password, method='sha256'))
@@ -102,7 +108,6 @@ def create_account():
     return render_template('signup.html')
 
 # to login an already existing user
-
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -134,6 +139,20 @@ def generate_short(long_link: str, length=6):
     random_chars = ''.join(random.choice(characters) for _ in range(length))
     return random_chars
 
+def get_location(ip_address: str):
+    API_KEY = os.getenv('API_KEY')
+    api_url = f'https://api.ipgeolocation.io/ipgeo?apiKey={API_KEY}&ip={ip_address}'
+    response = requests.get(api_url)
+    data = response.json()
+    
+    # Extract location information from the response data
+    country = data['country_name']
+    city = data['city']
+    location = f"{city}, {country}"
+    
+    return location
+
+    
 
 # assignment
 @app.route('/<short_link>')
@@ -143,7 +162,12 @@ def redirect_link(short_link):
     if link:
         link.clicks += 1
         db.session.commit()
-        return redirect(link.long_link)
+        ip_address = request.headers.get('X-Forwarded-For')
+        if ip_address is None:
+            ip_address = request.remote_addr
+        location = get_location(ip_address)
+        print(location)
+        return render_template('redirect.html',link = link.long_link)
     else:
         return 'link not found', 404
 
@@ -151,70 +175,46 @@ def redirect_link(short_link):
 # def get_short_link()
 @app.route('/', methods=['GET', 'POST'])
 # @login_required
-@cache.cached(timeout=20)
-@limiter.limit("1/second")
+# @cache.cached(timeout=20)
+# @limiter.limit("1/second")
 def home():
     latest_link = None  # Initialize the variable
 
     if request.method == 'POST' and current_user.is_authenticated:
         link = request.form.get('link')
-        custom_link = request.form.get('custom_link')
-        found_url = Link.query.filter_by(
-            long_link=link, user=current_user).first()
-        if found_url:
-            flash('URL already exists for this user.')
-
-        elif custom_link:
-            flash("You are creating a personalized link for your long url")
-            saved_link = Link(long_link=link, short_link=custom_link, custom_link=custom_link, user_id=current_user.id)
-            db.session.add(saved_link)
-            db.session.commit()
-            latest_link = saved_link.short_link
-
-            return redirect(url_for('home', latest_link=latest_link))
-
+        if not is_valid_url(link):
+            flash('Link provided is not valid')
         else:
-            short = generate_short(link)
-            saved_link = Link(long_link=link, short_link=short, user_id=current_user.id)
-            db.session.add(saved_link)
-            db.session.commit()
-            latest_link = saved_link.short_link  # Get the latest short link
+            custom_link = request.form.get('custom_link')
+            found_url = Link.query.filter_by(
+                long_link=link, user=current_user).first()
+            if found_url:
+                flash('URL already exists for this user.')
 
-            return redirect(url_for('home', latest_link=latest_link))
+            elif custom_link:
+                flash("You are creating a personalized link for your long url")
+                saved_link = Link(long_link=link, short_link=custom_link, custom_link=custom_link, user_id=current_user.id)
+                db.session.add(saved_link)
+                db.session.commit()
+                latest_link = saved_link.short_link
+
+                return redirect(url_for('home', latest_link=latest_link))
+
+            else:
+                short = generate_short(link)
+                saved_link = Link(long_link=link, short_link=short, user_id=current_user.id)
+                db.session.add(saved_link)
+                db.session.commit()
+                latest_link = saved_link.short_link  # Get the latest short link
+
+                return redirect(url_for('home', latest_link=latest_link))
 
     if current_user.is_authenticated:
         links = Link.query.filter_by(user=current_user).order_by(
-        desc(Link.created_at)).all()
-
-        ip_address = request.remote_addr
-        record = ip2location.get_all(ip_address)
-
-        # Access various geolocation properties
-        country = record.country_name
-        region = record.region
-        city = record.city
-        latitude = record.latitude
-        longitude = record.longitude
-
-        return f"Your location: {city}, {region}, {country} (Latitude: {latitude}, Longitude: {longitude})"
-
-        # ip_address = request.remote_addr
-        # location_info = geoip_reader.get(ip_address)
-
-        # if location_info is not None:
-        #     country = location_info['country']['names']['en']
-        #     city = location_info['city']['names']['en']
-        #     print (f"Your location: {city}, {country}")
-        # else:
-        #     return "Unable to determine your location"
-
+            desc(Link.created_at)).all()
     else:
         links = []
-
-    
-
     return render_template('index.html', links=links, latest_link=latest_link)
-
 
 #qrcode
 def generate_qr_code(link):
@@ -319,5 +319,4 @@ def delete_link(id: int):
 
 
 if __name__ == "__main__":
-    ip2location.open(database_path)
     app.run(debug=True)
